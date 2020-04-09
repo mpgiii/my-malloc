@@ -4,7 +4,7 @@
  * April 2020 
  */
 
-#define MAX_DEBUG_LEN 64
+#include "malloc.h"
 
 /* global end point to make sure each call to malloc keeps track of where our
  * list is */

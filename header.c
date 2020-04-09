@@ -4,16 +4,8 @@
  * Written by Michael Georgariou for CPE 453
  * April 2020 
  */
-
-#define CHUNK_SIZE 64000
-#define NODE_SIZE sizeof(struct Node)
-
-struct Node {
-    uintptr_t addr;
-    size_t size;
-    int free;
-    struct Node* next;
-}
+ 
+#include "header.h"
 
 /* creates a node. If prev = NULL, this is the first node */
 struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, int free) {
