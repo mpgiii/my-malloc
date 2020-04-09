@@ -4,7 +4,7 @@
  * Written by Michael Georgariou for CPE 453
  * April 2020 
  */
- 
+
 #include "header.h"
 
 /* creates a node. If prev = NULL, this is the first node */

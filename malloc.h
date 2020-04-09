@@ -1,6 +1,8 @@
 #ifndef MALLOC_H
 #define MALLOC_H
 
+#include "header.h"
+
 #define MAX_DEBUG_LEN 64
 
 void* malloc(size_t size);
