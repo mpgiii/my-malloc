@@ -149,9 +149,9 @@ void free(void* ptr) {
         return;
     }
 
-    /* again, using the fact that the minus one really means
+    /* using the fact that the minus one really means
      * subtract the size of one Node struct */
-    node_ptr = (struct Node*)ptr - 1;
+    node_ptr = (struct Node*) ptr - 1;
 
     /* and set the free bit in that node header to be true */
     node_ptr->free = 1;
@@ -168,7 +168,7 @@ void* realloc(void* ptr, size_t size) {
 
     /* if realloc is called with size 0 then we are just calling free. */
     if (size == 0) {
-        free(0);
+        free(ptr);
         return ptr;
     }
     /* that ^ should handle our "special" cases */
@@ -176,14 +176,17 @@ void* realloc(void* ptr, size_t size) {
 
     /* first off, if we try to realloc and the size of that block is already
      * big enough, we don't need to do anything, for now
-     * TODO: make realloc shrink in this case */
+     * TODO: make realloc shrink in this case to avoid memory leaks */
     ptr_head = (struct Node*)ptr - 1;
     if (ptr_head->size >= size) {
         return ptr;
     }
 
-    /* */
+    /* for now, let's just copy everything over to a newly allocated spot
+     * with the size we need. */
     result = malloc(size);
+    memcpy(result, ptr, ptr_head->size);
+    /*free(ptr);*/
 
     return(result);
 }
