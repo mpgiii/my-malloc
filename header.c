@@ -8,7 +8,8 @@
 #include "header.h"
 
 /* creates a node. If prev = NULL, this is the first node */
-struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, int free) {
+struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, 
+                       int free) {
     struct Node header;
     header.addr = addr + NODE_SIZE;
     header.size = size;

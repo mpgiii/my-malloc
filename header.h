@@ -17,7 +17,8 @@ struct Node {
 
 extern void* global_end;
 
-struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, int free);
+struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, 
+                       int free);
 
 struct Node* findNextFree(size_t size);
 
