@@ -4,12 +4,64 @@
  * April 2020 
  */
 
-#include "header.h"
-#include "malloc.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <unistd.h>
+
+#define CHUNK_SIZE 64000
+#define NODE_SIZE sizeof(struct Node) + (sizeof(struct Node) % 16)
+#define MAX_DEBUG_LEN 64
+
+/* creates a node. If prev = NULL, this is the first node */
+struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, 
+                       int free) {
+    struct Node header;
+    header.addr = addr + NODE_SIZE;
+    header.size = size;
+    header.free = free;
+    header.next = NULL;
+    header.prev = prev;
+    if (prev) {
+        prev->next = &header;
+    }
+    return header;
+}
 
 /* global start point to make sure each call to malloc keeps track of where our
  * list is */
 void* global_start = sbrk(0);
+
+struct Node* findNextFree() {
+    struct Node* temp = global_start;
+
+    /* iterate through the linked list until the following conditions met:
+     * - we have not hit the end of the list
+     * - the current node is free*/
+    while (temp && !i(temp->free)) {
+        temp = temp->next;
+    }
+    return temp;
+}
+
+struct Node* getMoreSpace() {
+    /* put our new node right where the memory ends */
+    struct Node* new_node = sbrk(0);
+
+    /* request more space for this new block
+     * TODO: call sbrk with CHUNK_SIZE instead of size + NODE_SIZE
+     * to avoid calling it every time we call malloc */
+    if (sbrk(CHUNK_SIZE) == (void*) -1) {
+        return NULL;
+    }
+
+    /* put the data needed into our new header node and return it */
+    *new_node = makeHeader(CHUNK_SIZE, global_start, (uintptr_t)new_node, 0);
+    return new_node;
+
+}
 
 void* malloc(size_t size){
     struct Node* head_ptr;
