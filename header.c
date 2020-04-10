@@ -15,37 +15,38 @@ struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr,
     header.size = size;
     header.free = free;
     header.next = NULL;
+    header.prev = prev;
     if (prev) {
         prev->next = &header;
     }
     return header;
 }
 
-struct Node* findNextFree(size_t size) {
-    struct Node* temp = global_end;
+struct Node* findNextFree() {
+    struct Node* temp = global_start;
 
     /* iterate through the linked list until the following conditions met:
      * - we have not hit the end of the list
-     * - the current node is free and has a big enough size */
-    while (temp && !((temp->free) && (temp->size >= size))) {
+     * - the current node is free*/
+    while (temp && !i(temp->free)) {
         temp = temp->next;
     }
     return temp;
 }
 
-struct Node* getMoreSpace(struct Node* end, size_t size) {
+struct Node* getMoreSpace() {
     /* put our new node right where the memory ends */
     struct Node* new_node = sbrk(0);
 
     /* request more space for this new block
      * TODO: call sbrk with CHUNK_SIZE instead of size + NODE_SIZE
      * to avoid calling it every time we call malloc */
-    if (sbrk(size + NODE_SIZE) == (void*) -1) {
+    if (sbrk(CHUNK_SIZE) == (void*) -1) {
         return NULL;
     }
 
     /* put the data needed into our new header node and return it */
-    *new_node = makeHeader(size, end, (uintptr_t)new_node, 0);
+    *new_node = makeHeader(CHUNK_SIZE, global_start, (uintptr_t)new_node, 0);
     return new_node;
 
 }

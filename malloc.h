@@ -1,7 +1,5 @@
-#ifndef MALLOC_H
-#define MALLOC_H
-
-#include "header.h"
+#ifndef MY_MALLOC_H
+#define MY_MALLOC_H
 
 #include <stdlib.h>
 #include <stdio.h>

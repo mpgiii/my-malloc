@@ -4,11 +4,12 @@
  * April 2020 
  */
 
+#include "header.h"
 #include "malloc.h"
 
-/* global end point to make sure each call to malloc keeps track of where our
+/* global start point to make sure each call to malloc keeps track of where our
  * list is */
-void* global_end = NULL;
+void* global_start = sbrk(0);
 
 void* malloc(size_t size){
     struct Node* head_ptr;
@@ -20,30 +21,19 @@ void* malloc(size_t size){
     }
     size = size + (size % 16);
 
-    /* if the global end is not yet defined, this is the first call to 
-     * malloc. set up appropriately */
-    if (global_end == NULL) {
-        /* sets up head pointer. if this fails, return NULL */
-        if (!(head_ptr = getMoreSpace(NULL, size))) {
+    /* set the head pointer to the next free node */
+    head_ptr = findNextFree();
+    /* if findNextFree returns NULL, we know we need more space */
+    if (head_ptr == NULL ) {
+        if (!(head_ptr = getMoreSpace())) {
             return NULL;
         }
-    }
-
-    else {
-        /* set the head pointer to the next free node */
-        head_ptr = findNextFree(size);
-        /* if findNextFree returns NULL, we know we need more space */
-        if (head_ptr == NULL) {
-            if (!(head_ptr = getMoreSpace(global_end, size))) {
-                return NULL;
-            }
 /* TODO TODO TODO: I think getMoreSpace is broken. Look into that. */
-        }
-        /* to get to this else statement, head_ptr represents free block */
-        else {
-            head_ptr->free = 0;
-        }   
     }
+    /* to get to this else statement, head_ptr represents free block */
+    else {
+        head_ptr->free = 0;
+    }   
 
     /* set the global end to this new spot on the linked list we just made */
     global_end = head_ptr;
