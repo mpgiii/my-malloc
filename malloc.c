@@ -10,14 +10,23 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define CHUNK_SIZE 64000
 #define NODE_SIZE sizeof(struct Node) + (sizeof(struct Node) % 16)
 #define MAX_DEBUG_LEN 64
 
+struct Node {
+    uintptr_t addr;
+    size_t size;
+    int free;
+    struct Node* next;
+    struct Node* prev;
+};
+
 /* creates a node. If prev = NULL, this is the first node */
-struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr, 
-                       int free) {
+struct Node makeHeader(size_t size, struct Node* prev, struct Node* next, 
+                       uintptr_t addr, int free) {
     struct Node header;
     header.addr = addr + NODE_SIZE;
     header.size = size;
@@ -31,37 +40,58 @@ struct Node makeHeader(size_t size, struct Node* prev, uintptr_t addr,
 }
 
 /* global start point to make sure each call to malloc keeps track of where our
- * list is */
-void* global_start = sbrk(0);
-
-struct Node* findNextFree() {
-    struct Node* temp = global_start;
-
-    /* iterate through the linked list until the following conditions met:
-     * - we have not hit the end of the list
-     * - the current node is free*/
-    while (temp && !i(temp->free)) {
-        temp = temp->next;
-    }
-    return temp;
-}
+ * list is (should always be free) */
+struct Node* global_end = NULL;
 
 struct Node* getMoreSpace() {
-    /* put our new node right where the memory ends */
-    struct Node* new_node = sbrk(0);
+    void* addr;
 
-    /* request more space for this new block
-     * TODO: call sbrk with CHUNK_SIZE instead of size + NODE_SIZE
-     * to avoid calling it every time we call malloc */
-    if (sbrk(CHUNK_SIZE) == (void*) -1) {
+    /* request more space for our list */
+    if ((addr = sbrk(CHUNK_SIZE)) == (void*) -1) {
+        errno = ENOMEM;
         return NULL;
     }
 
-    /* put the data needed into our new header node and return it */
-    *new_node = makeHeader(CHUNK_SIZE, global_start, (uintptr_t)new_node, 0);
-    return new_node;
+    /* if global_end is NULL, we need to initialize it. */
+    if (!global_end) {
+        global_end = addr;
+        *global_end = makeHeader(0, NULL, NULL, (intptr_t) addr, 1);
+    }
 
+    /* resize our global end node to account for the new size increase */
+    global_end->size = global_end->size + CHUNK_SIZE;
+    return global_end;
 }
+
+
+struct Node* findNextFree(size_t size) {
+    struct Node* temp = global_end;
+
+    /* TODO: Look through list to see if anything fits, first */
+    /* Currently just adding onto the end no matter what. Can cause
+     * huge chunks of free memory in between. */
+
+
+    /* if the needed size is greater than what we have we need to 
+     * get more space */ 
+    while (global_end->size <= size) {
+        if (!(global_end = getMoreSpace())) {
+            return NULL;
+        }
+    }
+
+    /* now shift the global end to after the new temp node */
+    global_end->prev = temp;
+    global_end->size = global_end->size + size + NODE_SIZE;
+
+    /* now that there is enough space, create a temp to return, with the
+     * size passed in, global_end as its "next", global_end's "prev" as its 
+     * "prev", its addr as global_end's old addr, and mark it as not free. */
+    *temp = makeHeader(size, global_end->prev, global_end, global_end->addr, 0);
+
+    return temp;
+}
+
 
 void* malloc(size_t size){
     struct Node* head_ptr;
@@ -73,22 +103,18 @@ void* malloc(size_t size){
     }
     size = size + (size % 16);
 
-    /* set the head pointer to the next free node */
-    head_ptr = findNextFree();
-    /* if findNextFree returns NULL, we know we need more space */
-    if (head_ptr == NULL ) {
-        if (!(head_ptr = getMoreSpace())) {
+    /* if global_pointer is NULL, we need to initialize our memory */
+    if (!global_end) {
+        if (!(global_end = getMoreSpace())){
             return NULL;
         }
-/* TODO TODO TODO: I think getMoreSpace is broken. Look into that. */
     }
-    /* to get to this else statement, head_ptr represents free block */
-    else {
-        head_ptr->free = 0;
-    }   
 
-    /* set the global end to this new spot on the linked list we just made */
-    global_end = head_ptr;
+    /* set the head pointer to the next free node.
+     * if findNextFree returns NULL, we know getMoreSpace failed. */
+    if (!(head_ptr = findNextFree(size))) {
+        return NULL;
+    }
 
     /* debug stuff */
     if (getenv("DEBUG_MALLOC")) {
@@ -97,11 +123,8 @@ void* malloc(size_t size){
                  "(ptr=%p, size=%d)\n", size, head_ptr->addr, head_ptr->size);
     }
 
-    /* return the newly allocated memory.
-     * NOTE: the +1 means adding the size of a Node struct, thus giving
-     * the actual address a user can use. Thanks for reminding me of
-     * this, Professor Nico! :) */
-    return head_ptr+1;
+    /* return the newly allocated memory's address. */
+    return head_ptr->addr;
 }
 
 void* calloc(size_t nmemb, size_t size) {
