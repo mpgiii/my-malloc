@@ -42,6 +42,7 @@ struct Node makeHeader(size_t size, struct Node* prev, struct Node* next,
 /* global start point to make sure each call to malloc keeps track of where our
  * list is (should always be free) */
 struct Node* global_end = NULL;
+struct Node* list_head = NULL;
 
 struct Node* getMoreSpace() {
     void* addr;
@@ -55,6 +56,7 @@ struct Node* getMoreSpace() {
     /* if global_end is NULL, we need to initialize it. */
     if (!global_end) {
         global_end = addr;
+        list_head = NULL;
         *global_end = makeHeader(0, NULL, NULL, (intptr_t) addr, 1);
     }
 
@@ -63,33 +65,49 @@ struct Node* getMoreSpace() {
     return global_end;
 }
 
+void splitFreeNode(struct Node* freeNode, size_t size) {
+    struct Node* new = freeNode + size + NODE_SIZE;
+    new->size = freeNode->size - size - NODE_SIZE;
+    new->free = 1;
+    new->next = freeNode->next;
+    freeNode->size = size;
+    freeNode->free = 0;
+    freeNode->next = new;
+}
 
 struct Node* findNextFree(size_t size) {
-    struct Node* temp = global_end;
+    struct Node* temp = list_head;
+    struct Node* new;
 
-    /* TODO: Look through list to see if anything fits, first */
-    /* Currently just adding onto the end no matter what. Can cause
-     * huge chunks of free memory in between. */
+    /* Look through list to see our size fits anywhere first */
+    while (temp) {
+        if (temp->free && temp->size >= size) {
+            splitFreeNode(temp, size);
+            return temp;
+        }
+        temp = temp->next;
+    }
 
-
-    /* if the needed size is greater than what we have we need to 
-     * get more space */ 
+    /* if the needed size is greater than what we have available 
+     * we need to get more space */ 
     while (global_end->size <= size) {
         if (!(global_end = getMoreSpace())) {
             return NULL;
         }
     }
 
+    new = global_end;
+
     /* now shift the global end to after the new temp node */
-    global_end->prev = temp;
+    global_end->prev = new;
     global_end->size = global_end->size + size + NODE_SIZE;
 
     /* now that there is enough space, create a temp to return, with the
      * size passed in, global_end as its "next", global_end's "prev" as its 
      * "prev", its addr as global_end's old addr, and mark it as not free. */
-    *temp = makeHeader(size, global_end->prev, global_end, global_end->addr, 0);
+    *new = makeHeader(size, global_end->prev, global_end, global_end->addr, 0);
 
-    return temp;
+    return new;
 }
 
 
@@ -153,8 +171,16 @@ void free(void* ptr) {
      * subtract the size of one Node struct */
     node_ptr = (struct Node*) ptr - 1;
 
+    /* TODO: check and see if the data before and after this one
+     * is free, to consolidate data */
+
     /* and set the free bit in that node header to be true */
     node_ptr->free = 1;
+
+
+    /* TODO: not required, but if the node_ptr is the global_end,
+     * consider giving that memory back to the OS and move the global_end
+     * to be global_end->prev */
 }
 
 void* realloc(void* ptr, size_t size) {
@@ -186,7 +212,7 @@ void* realloc(void* ptr, size_t size) {
      * with the size we need. */
     result = malloc(size);
     memcpy(result, ptr, ptr_head->size);
-    /*free(ptr);*/
+    free(ptr);
 
     return(result);
 }
