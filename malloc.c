@@ -13,7 +13,7 @@
 #include <errno.h>
 
 #define CHUNK_SIZE 64000
-#define NODE_SIZE sizeof(struct Node) + (sizeof(struct Node) % 16)
+#define NODE_SIZE ((sizeof(struct Node) - 1) | 15) + 1
 #define MAX_DEBUG_LEN 64
 
 struct Node {
@@ -119,7 +119,7 @@ void* malloc(size_t size){
     if (size == 0) {
         return NULL;
     }
-    size = size + (size % 16);
+    size = ((size - 1) | 15) + 1;
 
     /* if global_pointer is NULL, we need to initialize our memory */
     if (!global_end) {
