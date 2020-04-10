@@ -12,7 +12,6 @@ void* global_end = NULL;
 
 void* malloc(size_t size){
     struct Node* head_ptr;
-    struct Node* end;
 
     /* make sure the amount allocated is actually divisible by 16. 
      * If not, round up to align size. */
@@ -121,6 +120,7 @@ void* realloc(void* ptr, size_t size) {
     /* */
     result = malloc(size);
 
+    return(result);
 }
 
 int main(int argc, char* argv[]) {

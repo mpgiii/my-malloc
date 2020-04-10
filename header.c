@@ -44,6 +44,7 @@ struct Node* getMoreSpace(struct Node* end, size_t size) {
     }
 
     /* put the data needed into our new header node and return it */
-    *new_node = (size, end, new_node, 0);
+    *new_node = makeHeader(size, end, (uintptr_t)new_node, 0);
     return new_node;
+
 }

@@ -3,6 +3,10 @@
 
 #include "header.h"
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
 #define MAX_DEBUG_LEN 64
 
 void* malloc(size_t size);
