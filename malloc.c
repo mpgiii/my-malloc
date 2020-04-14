@@ -75,7 +75,7 @@ struct Node* getMoreSpace() {
  * above it as a new free node 
  * returns the new free node */
 struct Node* splitFreeNode(struct Node* freeNode, size_t size) {
-    struct Node* new = (uintptr_t)freeNode + NODE_SIZE + size;
+    struct Node* new = (struct Node*)((uintptr_t)freeNode + NODE_SIZE + size);
     *new = makeHeader(freeNode->size - size - NODE_SIZE, freeNode,
                       freeNode->next, freeNode->addr + size, 1);
     freeNode->next = new;
@@ -157,7 +157,7 @@ void* malloc(size_t size){
 
     debugMalloc(size, (void*)head_ptr->addr, head_ptr->size);
     /* return the newly allocated memory's address. */
-    return head_ptr->addr;
+    return (void*)head_ptr->addr;
 }
 
 void* calloc(size_t nmemb, size_t size) {
@@ -322,12 +322,12 @@ void* realloc(void* ptr, size_t size) {
     if (node_ptr->size >= size) {
         /* if the spot has enough size to make a new free node above it,
          * do that, so we can utilize this otherwise leaked memory */
-        if (node_ptr >= size + NODE_SIZE)
+        if (node_ptr->size >= size + NODE_SIZE)
             splitFreeNode(node_ptr, size);
 
         /* and return that node's address, because we didn't have to move it. */
         reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
-        return node_ptr->addr;
+        return (void*)node_ptr->addr;
     }
 
     /* for now, if it's too big to fit currently, let's just copy everything 
@@ -342,10 +342,9 @@ void* realloc(void* ptr, size_t size) {
 }
 
 int main(int argc, char* argv[]) {
-    int* hello;
     int i;
     for (i=0; i<8192; i++) {
-        hello = malloc(i);
+        malloc(i);
     }
     return 1;
 }
