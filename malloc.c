@@ -13,7 +13,7 @@
 #include <errno.h>
 
 #define CHUNK_SIZE 64000
-#define NODE_SIZE ((sizeof(struct Node) - 1) | 15) + 1
+#define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
 #define MAX_DEBUG_LEN 64
 
 struct Node {
@@ -31,11 +31,8 @@ struct Node makeHeader(size_t size, struct Node* prev, struct Node* next,
     header.addr = addr + NODE_SIZE;
     header.size = size;
     header.free = free;
-    header.next = NULL;
+    header.next = next;
     header.prev = prev;
-    if (prev) {
-        prev->next = &header;
-    }
     return header;
 }
 
@@ -56,58 +53,60 @@ struct Node* getMoreSpace() {
     /* if global_end is NULL, we need to initialize it. */
     if (!global_end) {
         global_end = addr;
-        list_head = NULL;
-        *global_end = makeHeader(0, NULL, NULL, (intptr_t) addr, 1);
+        *global_end = makeHeader((size_t)CHUNK_SIZE - NODE_SIZE, NULL, 
+                                 NULL, (intptr_t) addr, 1);
     }
 
-    /* resize our global end node to account for the new size increase */
-    global_end->size = global_end->size + CHUNK_SIZE;
+    /* if global_end is already initialized, add CHUNK_SIZE to its size to
+     * keep track of how much space we have available */
+    else {
+        global_end->size = global_end->size + CHUNK_SIZE;
+    }
     return global_end;
 }
 
-void splitFreeNode(struct Node* freeNode, size_t size) {
-    struct Node* new = freeNode + size + NODE_SIZE;
-    new->size = freeNode->size - size - NODE_SIZE;
-    new->free = 1;
-    new->next = freeNode->next;
+
+/* changes freeNode's size to the given size, and leaves everything
+ * above it as a new free node 
+ * returns the new free node */
+struct Node* splitFreeNode(struct Node* freeNode, size_t size) {
+    struct Node* new = (uintptr_t)freeNode + NODE_SIZE + size;
+    *new = makeHeader(freeNode->size - size - NODE_SIZE, freeNode,
+                      freeNode->next, freeNode->addr + size, 1);
+    freeNode->next = new;
     freeNode->size = size;
     freeNode->free = 0;
-    freeNode->next = new;
+    return new;
 }
 
 struct Node* findNextFree(size_t size) {
     struct Node* temp = list_head;
-    struct Node* new;
 
     /* Look through list to see our size fits anywhere first */
-    while (temp) {
-        if (temp->free && temp->size >= size) {
+    while (temp && temp != global_end) {
+        /* if we find a node that can fit this, use it to avoid leaking
+         * memory. */
+        if (temp->free && temp->size >= size + NODE_SIZE) {
             splitFreeNode(temp, size);
             return temp;
         }
         temp = temp->next;
     }
 
-    /* if the needed size is greater than what we have available 
-     * we need to get more space */ 
-    while (global_end->size <= size) {
+    /* if we got here, it means we found NO nodes that can fit this data.
+     * to fix this, keep increasing the size of the global end point until
+     * it has enough room to store this data */
+    while (global_end->size <= size + NODE_SIZE) {
         if (!(global_end = getMoreSpace())) {
             return NULL;
         }
     }
 
-    new = global_end;
+    /* now global_end has enough space. let's chop off the part of it that
+     * we want to give to the user and move the global_end to after that now */
+    global_end = splitFreeNode(global_end, size);
 
-    /* now shift the global end to after the new temp node */
-    global_end->prev = new;
-    global_end->size = global_end->size + size + NODE_SIZE;
-
-    /* now that there is enough space, create a temp to return, with the
-     * size passed in, global_end as its "next", global_end's "prev" as its 
-     * "prev", its addr as global_end's old addr, and mark it as not free. */
-    *new = makeHeader(size, global_end->prev, global_end, global_end->addr, 0);
-
-    return new;
+    return global_end->prev;
 }
 
 
@@ -121,11 +120,12 @@ void* malloc(size_t size){
     }
     size = ((size - 1) | 15) + 1;
 
-    /* if global_pointer is NULL, we need to initialize our memory */
+    /* if global_pointer is NULL, we need to initialize our list */
     if (!global_end) {
         if (!(global_end = getMoreSpace())){
             return NULL;
         }
+        list_head = global_end;
     }
 
     /* set the head pointer to the next free node.
@@ -158,8 +158,52 @@ void* calloc(size_t nmemb, size_t size) {
     return result;
 }
 
+void consolidateFree(struct Node* node_ptr) {
+    if (!node_ptr) {
+        return;
+    }
+
+    node_ptr->free = 1;
+
+    if (node_ptr->next && node_ptr->next->free) {
+        node_ptr->size = node_ptr->size + NODE_SIZE + node_ptr->next->size;
+        node_ptr->next = node_ptr->next->next;
+    }
+
+    if (node_ptr->prev && node_ptr->prev->free) {
+        node_ptr->prev->size = node_ptr->prev->size + NODE_SIZE + 
+                               node_ptr->size;
+        node_ptr->prev->next = node_ptr->next;
+    }
+
+}
+
+/* get the node pointer of a certain pointer (in case
+ * the user gives us something in the middle of two heads..
+ * for some reason) */
+struct Node* getNodePtr(intptr_t ptr) {
+    struct Node* node_ptr = list_head;
+
+    /* to find which of the malloc'd nodes we'd like to free, we need
+     * to go through our linked list to find which node contains the
+     * pointer the user passed. */
+    while (node_ptr) {
+        /* if we have hit the address exactly, or found it is between the
+         * current node's address and the next, we know to free this node. */
+        if (node_ptr->addr == ptr || (node_ptr->addr < ptr &&
+                                      node_ptr->next && 
+                                      node_ptr->next->addr > ptr)) {
+            break;
+        }
+        node_ptr = node_ptr->next;
+    }
+    return node_ptr;
+}
+
 void free(void* ptr) {
-    struct Node* node_ptr;
+    struct Node* node_ptr = list_head;
+
+    intptr_t intptr = (intptr_t) ptr;
 
     /* according to the man page of free:
      * "if ptr is a null pointer, no action occurs. */
@@ -167,16 +211,20 @@ void free(void* ptr) {
         return;
     }
 
-    /* using the fact that the minus one really means
-     * subtract the size of one Node struct */
-    node_ptr = (struct Node*) ptr - 1;
+    /* find the node which contains this ptr */
+    node_ptr = getNodePtr(intptr);
 
-    /* TODO: check and see if the data before and after this one
-     * is free, to consolidate data */
+    /* if we got all the way to the end of our list, we know something is up.
+     * the user must have passed a ptr that it did not malloc. This is an
+     * error. TODO: actually report this error instead of just doing nothin */
+    if (!node_ptr) {
+        return;
+    }
 
-    /* and set the free bit in that node header to be true */
-    node_ptr->free = 1;
-
+    /* check and see if the data before and after this one
+     * is free, to consolidate nodes.
+     * NOTE: also sets the node_ptr's free bit to 1. */
+    consolidateFree(node_ptr);
 
     /* TODO: not required, but if the node_ptr is the global_end,
      * consider giving that memory back to the OS and move the global_end
@@ -184,7 +232,8 @@ void free(void* ptr) {
 }
 
 void* realloc(void* ptr, size_t size) {
-    struct Node* ptr_head;
+    struct Node* node_ptr = list_head;
+    intptr_t intptr = (intptr_t) ptr;
     void* result;
 
     /* if realloc is called with NULL, it is just malloc. */
@@ -203,20 +252,35 @@ void* realloc(void* ptr, size_t size) {
     /* first off, if we try to realloc and the size of that block is already
      * big enough, we don't need to do anything, for now
      * TODO: make realloc shrink in this case to avoid memory leaks */
-    ptr_head = (struct Node*)ptr - 1;
-    if (ptr_head->size >= size) {
+
+    node_ptr = getNodePtr(intptr);
+
+    /* if its null, the user did something stupid! We should probably report
+     * this... TODO. */
+    if (!node_ptr) {
+        return NULL;
+    }
+
+    /* if the node already has enough space... eh, just leave it for now.
+     * TODO: resize, and make a new free node above it */
+    if (node_ptr->size >= size) {
         return ptr;
     }
 
     /* for now, let's just copy everything over to a newly allocated spot
      * with the size we need. */
     result = malloc(size);
-    memcpy(result, ptr, ptr_head->size);
+    memcpy(result, (void*)node_ptr->addr, node_ptr->size);
     free(ptr);
 
     return(result);
 }
 
 int main(int argc, char* argv[]) {
-    return 2;   
+    int* hello;
+    int i;
+    for (i=0; i<8192; i++) {
+        hello = malloc(i);
+    }
+    return 1;
 }
