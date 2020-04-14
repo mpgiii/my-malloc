@@ -13,8 +13,12 @@
 #include <errno.h>
 
 #define CHUNK_SIZE 64000
+/* NODE_SIZE rounds to the nearest 16. That's what that math is */
 #define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
 #define MAX_DEBUG_LEN 64
+
+/* flag to know when to print debug info */
+int in_malloc = 1;
 
 struct Node {
     uintptr_t addr;
@@ -36,11 +40,12 @@ struct Node makeHeader(size_t size, struct Node* prev, struct Node* next,
     return header;
 }
 
-/* global start point to make sure each call to malloc keeps track of where our
- * list is (should always be free) */
+/* global start and end point to make sure each call to malloc keeps track
+ * of where our list is */
 struct Node* global_end = NULL;
 struct Node* list_head = NULL;
 
+/* increases the size of global_end's free datai by CHUNK_SIZE */
 struct Node* getMoreSpace() {
     void* addr;
 
@@ -79,6 +84,9 @@ struct Node* splitFreeNode(struct Node* freeNode, size_t size) {
     return new;
 }
 
+/* goes through the list and finds the next free node that has a size
+ * of at least the passed in size. 
+ * only returns NULL if getMoreSpace() failed */
 struct Node* findNextFree(size_t size) {
     struct Node* temp = list_head;
 
@@ -109,6 +117,16 @@ struct Node* findNextFree(size_t size) {
     return global_end->prev;
 }
 
+void debugMalloc(size_t in_size, void* out_ptr, size_t out_size) {
+    char debug[MAX_DEBUG_LEN];
+
+    if (in_malloc && getenv("DEBUG_MALLOC")) {
+        snprintf(debug, MAX_DEBUG_LEN, "MALLOC: cmalloc(%d)       =>  "
+                 "(ptr=%p, size=%d)\n", (int)in_size, out_ptr, (int)out_size); 
+        puts(debug);
+    }
+}
+
 
 void* malloc(size_t size){
     struct Node* head_ptr;
@@ -116,13 +134,15 @@ void* malloc(size_t size){
     /* make sure the amount allocated is actually divisible by 16. 
      * If not, round up to align size. */
     if (size == 0) {
+        debugMalloc(size, NULL, 0);
         return NULL;
     }
     size = ((size - 1) | 15) + 1;
 
-    /* if global_pointer is NULL, we need to initialize our list */
+    /* if global_end is NULL, we need to initialize our list */
     if (!global_end) {
         if (!(global_end = getMoreSpace())){
+            debugMalloc(size, NULL, 0);
             return NULL;
         }
         list_head = global_end;
@@ -131,22 +151,21 @@ void* malloc(size_t size){
     /* set the head pointer to the next free node.
      * if findNextFree returns NULL, we know getMoreSpace failed. */
     if (!(head_ptr = findNextFree(size))) {
+        debugMalloc(size, NULL, 0);
         return NULL;
     }
 
-    /* debug stuff */
-    if (getenv("DEBUG_MALLOC")) {
-        char debug[MAX_DEBUG_LEN];
-        snprintf(debug, MAX_DEBUG_LEN, "MALLOC: malloc(%d)      =>  "
-                 "(ptr=%p, size=%d)\n", size, head_ptr->addr, head_ptr->size);
-    }
-
+    debugMalloc(size, (void*)head_ptr->addr, head_ptr->size);
     /* return the newly allocated memory's address. */
     return head_ptr->addr;
 }
 
 void* calloc(size_t nmemb, size_t size) {
     void* result;
+    char debug[MAX_DEBUG_LEN];
+
+    /* make sure not to print debug stuff we don't want! */
+    in_malloc = 0;
 
     /* first, run malloc to allocate nmemb number of items at size size each */
     result = malloc(nmemb * size);
@@ -154,10 +173,22 @@ void* calloc(size_t nmemb, size_t size) {
     /* now, set all memory in that allocated slot to be zero. */
     memset(result, 0, nmemb * size);
 
+    in_malloc = 1;
+
+    if (getenv("DEBUG_MALLOC")) {
+        snprintf(debug, MAX_DEBUG_LEN, "MALLOC: calloc(%d, %d)      =>  "
+                 "(ptr=%p, size=%d)\n", (int)nmemb, (int)size, result, 
+                 (int)size);
+        puts(debug);
+    }
+
+
     /* that's all! pretty easy I think */
     return result;
 }
 
+/* pass in a newly freed node -- if the node on either side of it is
+ * also free, turn it into one big happy node. */
 void consolidateFree(struct Node* node_ptr) {
     if (!node_ptr) {
         return;
@@ -200,6 +231,14 @@ struct Node* getNodePtr(intptr_t ptr) {
     return node_ptr;
 }
 
+void freeDebug(void* ptr) {
+    char debug[MAX_DEBUG_LEN];
+    if (getenv("DEBUG_MALLOC")) {
+        snprintf(debug, MAX_DEBUG_LEN, "MALLOC: free(%p)\n", ptr);
+        puts(debug);
+    }
+}
+
 void free(void* ptr) {
     struct Node* node_ptr = list_head;
 
@@ -208,6 +247,7 @@ void free(void* ptr) {
     /* according to the man page of free:
      * "if ptr is a null pointer, no action occurs. */
     if (ptr == NULL) {
+        freeDebug(ptr);
         return;
     }
 
@@ -218,6 +258,7 @@ void free(void* ptr) {
      * the user must have passed a ptr that it did not malloc. This is an
      * error. TODO: actually report this error instead of just doing nothin */
     if (!node_ptr) {
+        freeDebug(ptr);
         return;
     }
 
@@ -229,6 +270,19 @@ void free(void* ptr) {
     /* TODO: not required, but if the node_ptr is the global_end,
      * consider giving that memory back to the OS and move the global_end
      * to be global_end->prev */
+
+    freeDebug(ptr);
+}
+
+void reallocDebug(void* in_ptr, size_t in_size, void* out_ptr, 
+                  size_t out_size) {
+    char debug[MAX_DEBUG_LEN];
+    if (getenv("DEBUG_MALLOC")) {
+        snprintf(debug, MAX_DEBUG_LEN, "MALLOC: realloc(%p, %d)     =>  "
+                 "(ptr=%p, size=%d)\n", in_ptr, (int)in_size, out_ptr,
+                 (int)out_size);
+        puts(debug);
+    }
 }
 
 void* realloc(void* ptr, size_t size) {
@@ -236,44 +290,55 @@ void* realloc(void* ptr, size_t size) {
     intptr_t intptr = (intptr_t) ptr;
     void* result;
 
+    /* don't wanna print debug stuff twice! */
+    in_malloc = 0;
+
     /* if realloc is called with NULL, it is just malloc. */
     if (ptr == NULL) {
-        return malloc(size);
+        result = malloc(size);
+        reallocDebug(NULL, size, result, size);
+        return result;
     }
 
     /* if realloc is called with size 0 then we are just calling free. */
     if (size == 0) {
         free(ptr);
+        reallocDebug(ptr, 0, ptr, 0);
         return ptr;
     }
     /* that ^ should handle our "special" cases */
 
-
-    /* first off, if we try to realloc and the size of that block is already
-     * big enough, we don't need to do anything, for now
-     * TODO: make realloc shrink in this case to avoid memory leaks */
-
+    /* get the actual node this ptr is stored in */
     node_ptr = getNodePtr(intptr);
 
     /* if its null, the user did something stupid! We should probably report
      * this... TODO. */
     if (!node_ptr) {
+        reallocDebug(ptr, size, NULL, 0);
         return NULL;
     }
 
-    /* if the node already has enough space... eh, just leave it for now.
-     * TODO: resize, and make a new free node above it */
+    /* if the node already has enough space... eh, just leave it for now. */
     if (node_ptr->size >= size) {
-        return ptr;
+        /* if the spot has enough size to make a new free node above it,
+         * do that, so we can utilize this otherwise leaked memory */
+        if (node_ptr >= size + NODE_SIZE)
+            splitFreeNode(node_ptr, size);
+
+        /* and return that node's address, because we didn't have to move it. */
+        reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
+        return node_ptr->addr;
     }
 
-    /* for now, let's just copy everything over to a newly allocated spot
-     * with the size we need. */
+    /* for now, if it's too big to fit currently, let's just copy everything 
+     * over to a newly allocated spot with the size we need, and free the
+     * old spot. */
     result = malloc(size);
-    memcpy(result, (void*)node_ptr->addr, node_ptr->size);
+    memcpy(result, (void*)node_ptr->addr, size);
     free(ptr);
 
-    return(result);
+    reallocDebug(ptr, size, result, size);
+    return result;
 }
 
 int main(int argc, char* argv[]) {
