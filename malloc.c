@@ -17,8 +17,11 @@
 #define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
 #define MAX_DEBUG_LEN 128
 
+#define TRUE 1
+#define FALSE 0
+
 /* flag to know when to print debug info */
-int in_malloc = 1;
+int in_malloc = TRUE;
 
 struct Node {
     uintptr_t addr;
@@ -30,9 +33,9 @@ struct Node {
 
 /* creates a node. If prev = NULL, this is the first node */
 struct Node makeHeader(size_t size, struct Node* prev, struct Node* next, 
-                       uintptr_t addr, int free) {
+                       uintptr_t node_addr, int free) {
     struct Node header;
-    header.addr = addr + NODE_SIZE;
+    header.addr = node_addr + NODE_SIZE;
     header.size = size;
     header.free = free;
     header.next = next;
@@ -77,10 +80,10 @@ struct Node* getMoreSpace() {
 struct Node* splitFreeNode(struct Node* freeNode, size_t size) {
     struct Node* new = (struct Node*)((uintptr_t)freeNode + NODE_SIZE + size);
     *new = makeHeader(freeNode->size - size - NODE_SIZE, freeNode,
-                      freeNode->next, freeNode->addr + size, 1);
+                      freeNode->next, freeNode->addr + size, TRUE);
     freeNode->next = new;
     freeNode->size = size;
-    freeNode->free = 0;
+    freeNode->free = FALSE;
     return new;
 }
 
@@ -134,7 +137,7 @@ void* malloc(size_t size){
     /* make sure the amount allocated is actually divisible by 16. 
      * If not, round up to align size. */
     if (size == 0) {
-        debugMalloc(size, NULL, 0);
+        debugMalloc(size, NULL, size);
         return NULL;
     }
     size = ((size - 1) | 15) + 1;
@@ -165,7 +168,7 @@ void* calloc(size_t nmemb, size_t size) {
     char debug[MAX_DEBUG_LEN];
 
     /* make sure not to print debug stuff we don't want! */
-    in_malloc = 0;
+    in_malloc = FALSE;
 
     /* first, run malloc to allocate nmemb number of items at size size each */
     result = malloc(nmemb * size);
@@ -173,7 +176,7 @@ void* calloc(size_t nmemb, size_t size) {
     /* now, set all memory in that allocated slot to be zero. */
     memset(result, 0, nmemb * size);
 
-    in_malloc = 1;
+    in_malloc = TRUE;
 
     if (getenv("DEBUG_MALLOC")) {
         snprintf(debug, MAX_DEBUG_LEN, "MALLOC: calloc(%d, %d)      =>  "
@@ -218,7 +221,7 @@ void consolidateFree(struct Node* node_ptr) {
 struct Node* getNodePtr(intptr_t ptr) {
     struct Node* node_ptr = list_head;
 
-    /* to find which of the malloc'd nodes we'd like to free, we need
+    /* to find which of the malloc'd nodes we're looking for, we need
      * to go through our linked list to find which node contains the
      * pointer the user passed. */
     while (node_ptr) {
@@ -260,17 +263,19 @@ void free(void* ptr) {
 
     /* if we got all the way to the end of our list, we know something is up.
      * the user must have passed a ptr that it did not malloc. This is an
-     * error. TODO: actually report this error instead of just doing nothin */
+     * error. */
     if (!node_ptr) {
         freeDebug(ptr);
+        perror("bad pointer");
         return;
     }
 
+    /* set the node to be free */
+    node_ptr->free = TRUE;
+
     /* check and see if the data before and after this one
-     * is free, to consolidate nodes.
-     * NOTE: also sets the node_ptr's free bit to 1. */
+     * is free, to consolidate nodes. */
     consolidateFree(node_ptr);
-    node_ptr->free = 1;
 
     /* TODO: not required, but if the node_ptr is the global_end,
      * consider giving that memory back to the OS and move the global_end
@@ -288,7 +293,7 @@ void reallocDebug(void* in_ptr, size_t in_size, void* out_ptr,
                  (int)out_size);
         puts(debug);
     }
-    in_malloc = 1;
+    in_malloc = TRUE;
 }
 
 void* realloc(void* ptr, size_t size) {
@@ -297,7 +302,7 @@ void* realloc(void* ptr, size_t size) {
     void* result;
 
     /* don't wanna print debug stuff twice! */
-    in_malloc = 0;
+    in_malloc = FALSE;
 
     /* if realloc is called with NULL, it is just malloc. */
     if (ptr == NULL) {
@@ -331,8 +336,9 @@ void* realloc(void* ptr, size_t size) {
     if (node_ptr->size >= size) {
         /* if the spot has enough size to make a new free node above it,
          * do that, so we can utilize this otherwise leaked memory */
-        if (node_ptr->size >= size + NODE_SIZE)
+        if (node_ptr->size >= size + NODE_SIZE) {
             splitFreeNode(node_ptr, size);
+        }
 
         /* return that node's address, because we didn't have to move it. */
         reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
@@ -355,8 +361,9 @@ void* realloc(void* ptr, size_t size) {
             /* if this new node is way too big (i.e. can fit another node above
              * it after this) we should make a new free node above it, so we
              * can avoid leaking too much memory */
-            if (node_ptr->size >= size + NODE_SIZE)
+            if (node_ptr->size >= size + NODE_SIZE) {
                 splitFreeNode(node_ptr, size);
+            }
 
             /* return it! we have consolidated data and not leaked memory.
              * mom would be so proud. */
@@ -368,23 +375,14 @@ void* realloc(void* ptr, size_t size) {
     /* if it's too big to fit currently, let's just copy everything 
      * over to a newly allocated spot with the size we need, and free the
      * old spot. */
+
+    /* NOTE: This is where the code currently fails under heavy testing..
+     * I think? However, I cannot see what's going wrong -- I was fairly
+     * confident I was handling this correctly. */
     result = malloc(size);
     memcpy(result, (void*)node_ptr->addr, node_ptr->size);
     free(ptr);
 
     reallocDebug(ptr, size, result, size);
     return result;
-}
-
-int main(int argc, char* argv[]) {
-    char* str;
-    char* dest;
-
-    str = malloc(10);
-    strcpy(str, "Hello!");
-    printf("before realloc: %p %s\n", str, str);
-    dest = realloc(str, 9);
-    printf("after realloc: %p %s\n", dest, dest);
-
-    return 1;
 }
