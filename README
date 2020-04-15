@@ -2,9 +2,10 @@ Michael Georgariou III
 
 No special instructions.
 
-I know my realloc has some sort of bug where it's not correctly copying
-contents according to your tests-- however, I have no idea how to fix this.
-I have attempted to debug by writing long strings and realloc'ing them,
-forcing the buffer to actually be copied over, and I couldn't reproduce
-this issue, so I chose to leave it as is. Other than that, hopefully my
-comments are easy enough to understand! :)
+I was having a lot of trouble with the malloc, realloc repeated test failing
+because data was getting corrupted. However, I figured out that when I was
+searching for a node that would fit the size needed, I would ALWAYS split this
+into two nodes, even if there wasn't enough space for a header and the minimum
+allocated stuff above that node. This was causing slight leakage. Overall, I
+am pretty proud of what I've written. Hopefully you enjoy reading comments, if
+you do that!
