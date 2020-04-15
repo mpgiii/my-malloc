@@ -368,7 +368,7 @@ void* realloc(void* ptr, size_t size) {
      * over to a newly allocated spot with the size we need, and free the
      * old spot. */
     result = malloc(size);
-    memcpy(result, (void*)node_ptr->addr, size);
+    memcpy(result, (void*)node_ptr->addr, node_ptr->size);
     free(ptr);
 
     reallocDebug(ptr, size, result, size);
@@ -376,15 +376,14 @@ void* realloc(void* ptr, size_t size) {
 }
 
 int main(int argc, char* argv[]) {
-    void* ptr1;
-    void* ptr2;
-    int i;
+    char* str;
+    char* dest;
 
-    for (i=0; i<1000; i++) {
-        if (i%2)
-            ptr1 = malloc(i);
-        else
-            ptr2 = realloc(ptr1, i*2);
-    }
+    str = malloc(10);
+    strcpy(str, "Hello!");
+    printf("before realloc: %p %s\n", str, str);
+    dest = realloc(str, 9);
+    printf("after realloc: %p %s\n", dest, dest);
+
     return 1;
 }

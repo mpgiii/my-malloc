@@ -2,7 +2,5 @@ Michael Georgariou III
 
 No special instructions.
 
-I believe my realloc works as intended, but it seems there is a bug where
-even if the buffer would have fit, and no copying would need to be done, my
-realloc will still do this. I thought I handled this and I cannot figure out
-what is causing it after a lot of time looking at it, so I left it as-is.
+I know my realloc has some sort of bug where it's not correctly copying
+contents -- however, I have no idea how to fix this.
