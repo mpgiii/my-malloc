@@ -196,6 +196,11 @@ void consolidateFree(struct Node* node_ptr) {
 
     if (node_ptr->next && node_ptr->next->free) {
         node_ptr->size = node_ptr->size + NODE_SIZE + node_ptr->next->size;
+        /* if we are consolidating with the global_end, make sure to change
+         * the global pointer to reflect that. */
+        if (node_ptr->next == global_end) {
+            global_end = node_ptr;
+        }
         node_ptr->next = node_ptr->next->next;
     }
 
@@ -339,6 +344,11 @@ void* realloc(void* ptr, size_t size) {
         if (node_ptr->size + NODE_SIZE + node_ptr->next->size >= size) {
             /* combine the node and the node above it */
             node_ptr->size = node_ptr->size + NODE_SIZE + node_ptr->next->size;
+            /* if we are consolidating with the global_end, make sure to change
+             * the global pointer to reflect that. */
+            if (node_ptr->next == global_end) {
+                global_end = node_ptr;
+            }
             node_ptr->next = node_ptr->next->next;
 
             /* if this new node is way too big (i.e. can fit another node above
@@ -368,10 +378,13 @@ void* realloc(void* ptr, size_t size) {
 int main(int argc, char* argv[]) {
     void* ptr1;
     void* ptr2;
-    
-    ptr1 = malloc(512);
-    ptr2 = malloc(512);
-    free(ptr2);
-    ptr1 = realloc(ptr1, 700);
+    int i;
+
+    for (i=0; i<1000; i++) {
+        if (i%2)
+            ptr1 = malloc(i);
+        else
+            ptr2 = realloc(ptr1, i*2);
+    }
     return 1;
 }
