@@ -250,7 +250,8 @@ void free(void* ptr) {
     /* according to the man page of free:
      * "if ptr is a null pointer, no action occurs. */
     if (ptr == NULL) {
-        freeDebug(ptr);
+        /* no debug printout here, because when snprintf is called it
+         * will call free(NULL); */
         return;
     }
 

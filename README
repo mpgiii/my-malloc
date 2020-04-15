@@ -3,4 +3,8 @@ Michael Georgariou III
 No special instructions.
 
 I know my realloc has some sort of bug where it's not correctly copying
-contents -- however, I have no idea how to fix this.
+contents according to your tests-- however, I have no idea how to fix this.
+I have attempted to debug by writing long strings and realloc'ing them,
+forcing the buffer to actually be copied over, and I couldn't reproduce
+this issue, so I chose to leave it as is. Other than that, hopefully my
+comments are easy enough to understand! :)
