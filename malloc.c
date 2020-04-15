@@ -15,7 +15,7 @@
 #define CHUNK_SIZE 64000
 /* NODE_SIZE rounds to the nearest 16. That's what that math is */
 #define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
-#define MAX_DEBUG_LEN 64
+#define MAX_DEBUG_LEN 128
 
 /* flag to know when to print debug info */
 int in_malloc = 1;
@@ -194,8 +194,6 @@ void consolidateFree(struct Node* node_ptr) {
         return;
     }
 
-    node_ptr->free = 1;
-
     if (node_ptr->next && node_ptr->next->free) {
         node_ptr->size = node_ptr->size + NODE_SIZE + node_ptr->next->size;
         node_ptr->next = node_ptr->next->next;
@@ -266,6 +264,7 @@ void free(void* ptr) {
      * is free, to consolidate nodes.
      * NOTE: also sets the node_ptr's free bit to 1. */
     consolidateFree(node_ptr);
+    node_ptr->free = 1;
 
     /* TODO: not required, but if the node_ptr is the global_end,
      * consider giving that memory back to the OS and move the global_end
@@ -283,6 +282,7 @@ void reallocDebug(void* in_ptr, size_t in_size, void* out_ptr,
                  (int)out_size);
         puts(debug);
     }
+    in_malloc = 1;
 }
 
 void* realloc(void* ptr, size_t size) {
@@ -308,6 +308,9 @@ void* realloc(void* ptr, size_t size) {
     }
     /* that ^ should handle our "special" cases */
 
+    /* align size to be a multiple of 16 */
+    size = ((size - 1) | 15) + 1;
+
     /* get the actual node this ptr is stored in */
     node_ptr = getNodePtr(intptr);
 
@@ -318,19 +321,40 @@ void* realloc(void* ptr, size_t size) {
         return NULL;
     }
 
-    /* if the node already has enough space... eh, just leave it for now. */
+    /* if the node already has enough space... hey, just leave it there! */
     if (node_ptr->size >= size) {
         /* if the spot has enough size to make a new free node above it,
          * do that, so we can utilize this otherwise leaked memory */
         if (node_ptr->size >= size + NODE_SIZE)
             splitFreeNode(node_ptr, size);
 
-        /* and return that node's address, because we didn't have to move it. */
+        /* return that node's address, because we didn't have to move it. */
         reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
         return (void*)node_ptr->addr;
     }
 
-    /* for now, if it's too big to fit currently, let's just copy everything 
+    /* if the node doesn't have enough space, but the node above it is free,
+     * we should try and expand the node it currently is in. */
+    if (node_ptr->next && node_ptr->next->free) {
+        if (node_ptr->size + NODE_SIZE + node_ptr->next->size >= size) {
+            /* combine the node and the node above it */
+            node_ptr->size = node_ptr->size + NODE_SIZE + node_ptr->next->size;
+            node_ptr->next = node_ptr->next->next;
+
+            /* if this new node is way too big (i.e. can fit another node above
+             * it after this) we should make a new free node above it, so we
+             * can avoid leaking too much memory */
+            if (node_ptr->size >= size + NODE_SIZE)
+                splitFreeNode(node_ptr, size);
+
+            /* return it! we have consolidated data and not leaked memory.
+             * mom would be so proud. */
+            reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
+            return (void*)node_ptr->addr;
+        }
+    }
+
+    /* if it's too big to fit currently, let's just copy everything 
      * over to a newly allocated spot with the size we need, and free the
      * old spot. */
     result = malloc(size);
@@ -342,9 +366,12 @@ void* realloc(void* ptr, size_t size) {
 }
 
 int main(int argc, char* argv[]) {
-    int i;
-    for (i=0; i<8192; i++) {
-        malloc(i);
-    }
+    void* ptr1;
+    void* ptr2;
+    
+    ptr1 = malloc(512);
+    ptr2 = malloc(512);
+    free(ptr2);
+    ptr1 = realloc(ptr1, 700);
     return 1;
 }
