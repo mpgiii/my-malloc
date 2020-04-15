@@ -63,7 +63,7 @@ struct Node* getMoreSpace() {
     if (!global_end) {
         global_end = addr;
         *global_end = makeHeader((size_t)CHUNK_SIZE - NODE_SIZE, NULL, 
-                                 NULL, (intptr_t) addr, 1);
+                                 NULL, (intptr_t) addr, TRUE);
     }
 
     /* if global_end is already initialized, add CHUNK_SIZE to its size to
@@ -98,8 +98,11 @@ struct Node* findNextFree(size_t size) {
     while (temp && temp != global_end) {
         /* if we find a node that can fit this, use it to avoid leaking
          * memory. */
-        if (temp->free && temp->size >= size + NODE_SIZE + MIN_ALLOC_SIZE) {
-            splitFreeNode(temp, size);
+        if (temp->free && temp->size >= size) {
+            /* and if it's way too big, create a new free node above it. */
+            if (temp->size >= size + NODE_SIZE + MIN_ALLOC_SIZE) {
+                splitFreeNode(temp, size);
+            }
             return temp;
         }
         temp = temp->next;
