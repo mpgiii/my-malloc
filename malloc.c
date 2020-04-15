@@ -15,6 +15,7 @@
 #define CHUNK_SIZE 64000
 /* NODE_SIZE rounds to the nearest 16. That's what that math is */
 #define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
+#define MIN_ALLOC_SIZE 16
 #define MAX_DEBUG_LEN 128
 
 #define TRUE 1
@@ -97,7 +98,7 @@ struct Node* findNextFree(size_t size) {
     while (temp && temp != global_end) {
         /* if we find a node that can fit this, use it to avoid leaking
          * memory. */
-        if (temp->free && temp->size >= size + NODE_SIZE) {
+        if (temp->free && temp->size >= size + NODE_SIZE + MIN_ALLOC_SIZE) {
             splitFreeNode(temp, size);
             return temp;
         }
@@ -336,7 +337,7 @@ void* realloc(void* ptr, size_t size) {
     if (node_ptr->size >= size) {
         /* if the spot has enough size to make a new free node above it,
          * do that, so we can utilize this otherwise leaked memory */
-        if (node_ptr->size >= size + NODE_SIZE) {
+        if (node_ptr->size >= size + NODE_SIZE + MIN_ALLOC_SIZE) {
             splitFreeNode(node_ptr, size);
         }
 
@@ -361,7 +362,7 @@ void* realloc(void* ptr, size_t size) {
             /* if this new node is way too big (i.e. can fit another node above
              * it after this) we should make a new free node above it, so we
              * can avoid leaking too much memory */
-            if (node_ptr->size >= size + NODE_SIZE) {
+            if (node_ptr->size >= size + NODE_SIZE + MIN_ALLOC_SIZE) {
                 splitFreeNode(node_ptr, size);
             }
 
