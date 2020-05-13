@@ -57,6 +57,7 @@ struct Node* getMoreSpace() {
     /* request more space for our list */
     if ((addr = sbrk(CHUNK_SIZE)) == (void*) -1) {
         errno = ENOMEM;
+        fprintf(stderr, "malloc: Could not adjust data segment size.\n");
         return NULL;
     }
 
@@ -114,6 +115,7 @@ struct Node* findNextFree(size_t size) {
      * it has enough room to store this data */
     while (global_end->size <= size + NODE_SIZE) {
         if (!(global_end = getMoreSpace())) {
+            /* error print occurs in getMoreSpace */
             return NULL;
         }
     }
@@ -151,6 +153,7 @@ void* malloc(size_t size){
     if (!global_end) {
         if (!(global_end = getMoreSpace())){
             debugMalloc(size, NULL, 0);
+            /* error printing occurs in getMoreSpace */
             return NULL;
         }
         list_head = global_end;
@@ -160,6 +163,7 @@ void* malloc(size_t size){
      * if findNextFree returns NULL, we know getMoreSpace failed. */
     if (!(head_ptr = findNextFree(size))) {
         debugMalloc(size, NULL, 0);
+        /* error printing occurs in getMoreSpace */
         return NULL;
     }
 
@@ -179,7 +183,13 @@ void* calloc(size_t nmemb, size_t size) {
     result = malloc(nmemb * size);
 
     /* now, set all memory in that allocated slot to be zero. */
-    memset(result, 0, nmemb * size);
+    if (result) {
+        memset(result, 0, nmemb * size);
+    }
+    else {
+        fprintf(stderr, "calloc: could not allocate memory.");
+        size = 0;
+    }
 
     in_malloc = TRUE;
 
@@ -189,7 +199,6 @@ void* calloc(size_t nmemb, size_t size) {
                  (int)size);
         puts(debug);
     }
-
 
     /* that's all! pretty easy I think */
     return result;
@@ -325,15 +334,16 @@ void* realloc(void* ptr, size_t size) {
     /* that ^ should handle our "special" cases */
 
     /* align size to be a multiple of 16 */
-    size = ((size - 1) | 15) + 1;
+    size = ROUND_TO_SIXTEEN(size);
 
     /* get the actual node this ptr is stored in */
     node_ptr = getNodePtr(intptr);
 
     /* if its null, the user did something stupid! We should probably report
-     * this... TODO. */
+     * this... */
     if (!node_ptr) {
         reallocDebug(ptr, size, NULL, 0);
+        fprintf(stderr, "realloc: ptr passed in has not been allocated.\n");
         return NULL;
     }
 
@@ -381,13 +391,17 @@ void* realloc(void* ptr, size_t size) {
      * over to a newly allocated spot with the size we need, and free the
      * old spot. */
 
-    /* NOTE: This is where the code currently fails under heavy testing..
-     * I think? However, I cannot see what's going wrong -- I was fairly
-     * confident I was handling this correctly. */
     result = malloc(size);
-    memcpy(result, (void*)node_ptr->addr, node_ptr->size);
-    free(ptr);
-
-    reallocDebug(ptr, size, result, size);
+    if (result) {
+        memcpy(result, (void*)node_ptr->addr, node_ptr->size);
+        free(ptr);
+        reallocDebug(ptr, size, result, size);
+    }
+    else {
+        fprintf(stderr, "realloc: unable to realloc to wanted size. Returning"
+                        " original pointer with original size...\n");
+        reallocDebug(ptr, size, (void*)node_ptr->addr, node_ptr->size);
+        result = (void*)node_ptr->addr;
+    }
     return result;
 }
