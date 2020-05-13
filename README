@@ -2,10 +2,11 @@ Michael Georgariou III
 
 No special instructions.
 
-I was having a lot of trouble with the malloc, realloc repeated test failing
-because data was getting corrupted. However, I figured out that when I was
-searching for a node that would fit the size needed, I would ALWAYS split this
-into two nodes, even if there wasn't enough space for a header and the minimum
-allocated stuff above that node. This was causing slight leakage. Overall, I
-am pretty proud of what I've written. Hopefully you enjoy reading comments, if
-you do that!
+The one big issue I am having is, believe it or not, with my Makefile. For
+"make malloc", I have made its only dependency intel-all, and it runs no
+command of its own. I tried to troubleshoot but it seems its trying to link,
+claiming there is no reference to main. In any case, to build the static
+libraries, simply call "make lib/libmalloc.a or "make lib64/libmalloc.a".
+Based on my testing, running "make" still works perfectly but will spit out
+that annoying error. other than that, nothing else special to note. :)
+

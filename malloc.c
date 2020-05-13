@@ -17,6 +17,7 @@
 #define NODE_SIZE (((sizeof(struct Node) - 1) | 15) + 1)
 #define MIN_ALLOC_SIZE 16
 #define MAX_DEBUG_LEN 128
+#define ROUND_TO_SIXTEEN(x) (((x - 1) | 15) + 1)
 
 #define TRUE 1
 #define FALSE 0
@@ -144,7 +145,7 @@ void* malloc(size_t size){
         debugMalloc(size, NULL, size);
         return NULL;
     }
-    size = ((size - 1) | 15) + 1;
+    size = ROUND_TO_SIXTEEN(size);
 
     /* if global_end is NULL, we need to initialize our list */
     if (!global_end) {
